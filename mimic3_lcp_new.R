@@ -24,7 +24,7 @@ setwd("h:/db/")
 # db connection
 con = dbConnect(dbDriver("PostgreSQL"), dbname = "mimic",
                 host = "127.0.0.1", port = 5432,
-                user = "postgres", password = "0367")
+                user = "", password = "")
 dbListTables(con)
 dbExistsTable(con, c("mimiciii", "admissions"))
 dbExistsTable(con, c("mimiciii", "diagnoses_icd"))
@@ -128,3 +128,43 @@ count(admission$rrh == 1 & admission$dm == 0)[2, 2] / count(admission$dm == 0)[2
 
 count(admission$rrh == 1 & admission$expire == 1)[2, 2] / count(admission$expire == 1)[2, 2] # 0.156
 count(admission$rrh == 1 & admission$expire == 0)[2, 2] / count(admission$expire == 0)[2, 2] # 0.179
+
+# length of stay vs. RH, all/diabetes/non-diabetes (linear regression)
+lm.all = lm(los ~ rh, admission)
+summary(lm.all) # R-sq = 0.034
+
+lm.dm = lm(los ~ rh, subset(admission[which(admission$dm == 1), ]))
+summary(lm.dm) # R-sq = 0.067
+
+lm.ndm = lm(los ~ rh, subset(admission[which(admission$dm == 0), ]))
+summary(lm.ndm) # R-sq = 0.030
+
+# length of stay vs. number of RH events, all/diabetes/non-diabetes (linear regression)
+lm.all = lm(los ~ cntRH, admission)
+summary(lm.all) # R-sq = 0.082
+
+lm.dm = lm(los ~ cntRH, subset(admission[which(admission$dm == 1), ]))
+summary(lm.dm) # R-sq = 0.124
+
+lm.ndm = lm(los ~ cntRH, subset(admission[which(admission$dm == 0), ]))
+summary(lm.ndm) # R-sq = 0.076
+
+# length of stay vs. RRH, all/diabetes/non-diabetes (linear regression)
+lm.all = lm(los ~ rrh, admission)
+summary(lm.all) # R-sq = 0.0108
+
+lm.dm = lm(los ~ rrh, subset(admission[which(admission$dm == 1), ]))
+summary(lm.dm) # R-sq = 0.022
+
+lm.ndm = lm(los ~ rrh, subset(admission[which(admission$dm == 0), ]))
+summary(lm.ndm) # R-sq = 0.009
+
+# length of stay vs. number of RRH events, all/diabetes/non-diabetes (linear regression)
+lm.all = lm(los ~ cntRRH, admission)
+summary(lm.all) # R-sq = 0.082
+
+lm.dm = lm(los ~ cntRRH, subset(admission[which(admission$dm == 1), ]))
+summary(lm.dm) # R-sq = 0.124
+
+lm.ndm = lm(los ~ cntRRH, subset(admission[which(admission$dm == 0), ]))
+summary(lm.ndm) # R-sq = 0.076
