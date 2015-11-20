@@ -24,7 +24,7 @@ setwd("h:/GitHub/lcp_glucose/")
 # db connection
 con = dbConnect(dbDriver("PostgreSQL"), dbname = "mimic",
                 host = "127.0.0.1", port = 5432,
-                user = "postgres", password = "0367")
+                user = "", password = "")
 dbListTables(con)
 dbExistsTable(con, c("mimiciii", "admissions"))
 dbExistsTable(con, c("mimiciii", "diagnoses_icd"))
