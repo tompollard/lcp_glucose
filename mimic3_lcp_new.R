@@ -19,17 +19,19 @@ if(length(.packages[!.inst]) > 0) install.packages(.packages[!.inst])
 # Load packages into session 
 lapply(.packages, library, character.only=TRUE)
 # Set path
-setwd("h:/db/")
+setwd("h:/GitHub/lcp_glucose/")
 
 # db connection
 con = dbConnect(dbDriver("PostgreSQL"), dbname = "mimic",
                 host = "127.0.0.1", port = 5432,
-                user = "", password = "")
+                user = "postgres", password = "0367")
 dbListTables(con)
 dbExistsTable(con, c("mimiciii", "admissions"))
 dbExistsTable(con, c("mimiciii", "diagnoses_icd"))
 dbExistsTable(con, c("mimiciii", "d_labitems"))
 dbExistsTable(con, c("mimiciii", "labevents"))
+
+###### processing ######
 
 # get admission id (hadm_id), expire or not, length of stay (in hours) in table admissions
 dbGetQuery(con, "select * from mimiciii.admissions limit 2")
@@ -104,6 +106,33 @@ for (i in 1:nrow(glu)) {
   } 
 }
 
+# find hypoglycemia after previous RH/RRH
+glu$hypoAfterRH = 0
+
+for (i in 2:nrow(glu)) {
+  if (glu$hadm_id[i] == glu$hadm_id[i-1] & glu$hypo[i] == 1 & glu$rh[i] == 1) {
+    glu$hypoAfterRH[i] = 1
+  }
+}
+
+glu$hypoAfterRRH = 0
+
+for (i in 2:nrow(glu)) {
+  if (glu$hadm_id[i] == glu$hadm_id[i-1] & glu$hypo[i] == 1 & glu$rrh[i] == 1) {
+    glu$hypoAfterRRH[i] = 1
+  }
+}
+
+# find hypoglycemia after hyperglycemia (> 10 mmol/L (>180 mg/dl))
+glu$rhAfterHyper = 0
+
+for (i in 2:nrow(glu)) {
+  if (glu$hadm_id[i] == glu$hadm_id[i-1] & glu$rh[i] == 1 & glu$valuenum[i-1] > 180) {
+    glu$rhAfterHyper[i] = 1
+  }
+}
+
+
 # group by admission
 gluAdm = sqldf("SELECT hadm_id, count(rh) as cntRH, max(rh) as rh, count(rrh) as cntRRH, max(rrh) as rrh
                FROM glu GROUP BY hadm_id", drv='SQLite')  
@@ -115,56 +144,77 @@ rm(gluAdm)
 write.table(admission, "admission.csv", sep=";", eol="\n", row.names=F, col.names=T)
 write.table(glu, "glucose.csv", sep=";", eol="\n", row.names=F, col.names=T)
 
-# prevalence
+###### analysis ######
+
+admission = read.csv("admission.csv", sep=";")
+glu = read.csv("glucose.csv", sep=";")
+
+# hypothesis 1: RH is more common in DM than in NDM? Y
 count(admission$rh == 1)[2, 2] / nrow(admission) # 0.138
 count(admission$rh == 1 & admission$dm == 1)[2, 2] / count(admission$dm == 1)[2, 2] # 0.204
 count(admission$rh == 1 & admission$dm == 0)[2, 2] / count(admission$dm == 0)[2, 2] # 0.117
 
+# hypothesis 3: RH independently (how?) associated with greater risk of death in DM/NDM? [adjust?]
+# association with death is stronger in DM? Y
 count(admission$rh == 1 & admission$expire == 1)[2, 2] / count(admission$expire == 1)[2, 2] # 0.188
 count(admission$rh == 1 & admission$expire == 0)[2, 2] / count(admission$expire == 0)[2, 2] # 0.133
 
+# hypothesis 2: RRH is more common in DM than in NDM? Y
 count(admission$rrh == 1 & admission$dm == 1)[2, 2] / count(admission$dm == 1)[2, 2] # 0.240
 count(admission$rrh == 1 & admission$dm == 0)[2, 2] / count(admission$dm == 0)[2, 2] # 0.157
 
+# hypothesis 4: RRH independently (how?) associated with greater risk of death in DM/NDM? [adjust?]
+# association with death is stronger in DM? Y
 count(admission$rrh == 1 & admission$expire == 1)[2, 2] / count(admission$expire == 1)[2, 2] # 0.156
 count(admission$rrh == 1 & admission$expire == 0)[2, 2] / count(admission$expire == 0)[2, 2] # 0.179
+
+# hypothesis 5: RH independently (how?) associated with subsequent true hypoglycemia? NO, 51 vs. 49
+count(glu$hypo == 1 & glu$hypoAfterRH == 1) / count(glu$hypo == 1) # 0.51
+
+# hypothesis 6: RRH independently (how?) associated with subsequent true hypoglycemia? ? 43 vs. 57
+count(glu$hypo == 1 & glu$hypoAfterRRH == 1) / count(glu$hypo == 1) # 0.43
+
+# hypothesis 7: RH independently associated with LOS? [yes/no, count]
+# association with death is stronger in DM -> same as hypothesis 3???
 
 # length of stay vs. RH, all/diabetes/non-diabetes (linear regression)
 lm.all = lm(los ~ rh, admission)
 summary(lm.all) # R-sq = 0.034
-
 lm.dm = lm(los ~ rh, subset(admission[which(admission$dm == 1), ]))
 summary(lm.dm) # R-sq = 0.067
-
 lm.ndm = lm(los ~ rh, subset(admission[which(admission$dm == 0), ]))
 summary(lm.ndm) # R-sq = 0.030
 
 # length of stay vs. number of RH events, all/diabetes/non-diabetes (linear regression)
 lm.all = lm(los ~ cntRH, admission)
 summary(lm.all) # R-sq = 0.082
-
 lm.dm = lm(los ~ cntRH, subset(admission[which(admission$dm == 1), ]))
 summary(lm.dm) # R-sq = 0.124
-
 lm.ndm = lm(los ~ cntRH, subset(admission[which(admission$dm == 0), ]))
 summary(lm.ndm) # R-sq = 0.076
+
+# hypothesis 8: RRH independently associated with LOS? [yes/no, count]
+# association with death is stronger in DM -> same as hypothesis 3???
 
 # length of stay vs. RRH, all/diabetes/non-diabetes (linear regression)
 lm.all = lm(los ~ rrh, admission)
 summary(lm.all) # R-sq = 0.0108
-
 lm.dm = lm(los ~ rrh, subset(admission[which(admission$dm == 1), ]))
 summary(lm.dm) # R-sq = 0.022
-
 lm.ndm = lm(los ~ rrh, subset(admission[which(admission$dm == 0), ]))
 summary(lm.ndm) # R-sq = 0.009
 
 # length of stay vs. number of RRH events, all/diabetes/non-diabetes (linear regression)
 lm.all = lm(los ~ cntRRH, admission)
 summary(lm.all) # R-sq = 0.082
-
 lm.dm = lm(los ~ cntRRH, subset(admission[which(admission$dm == 1), ]))
 summary(lm.dm) # R-sq = 0.124
-
 lm.ndm = lm(los ~ cntRRH, subset(admission[which(admission$dm == 0), ]))
 summary(lm.ndm) # R-sq = 0.076
+
+# question 12: how many RH followed by hypers? 34%
+count(glu$rh == 1 & glu$rhAfterHyper == 1) / count(glu$rh == 1) # 0.34
+
+# question 13: how many RH followed by insulin? ???
+
+# question 13: 
