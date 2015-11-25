@@ -6,7 +6,7 @@
 # Title : glucose classifier, using MIMIC3, relative hypoglycemia
 # Author : Wei-Hung Weng
 # Created : 11/19/2015
-# Comment : 
+# Comment : currently 0115
 # Reference : 
 # 1. MIMIC3 database
 # 2. Rinaldo
@@ -24,7 +24,7 @@ setwd("h:/GitHub/lcp_glucose/")
 # db connection
 con = dbConnect(dbDriver("PostgreSQL"), dbname = "mimic",
                 host = "127.0.0.1", port = 5432,
-                user = "", password = "")
+                user = "postgres", password = "0367")
 dbListTables(con)
 dbExistsTable(con, c("mimiciii", "admissions"))
 dbExistsTable(con, c("mimiciii", "diagnoses_icd"))
@@ -47,11 +47,11 @@ admission = left_join(admission, withDM, by="hadm_id")
 admission$dm[which(is.na(admission$dm))] = 0
 rm(withDM)
 
-# find the item ID of blood glucose exam (#50809 in ABG, case sensitive)
-labABGglucose = dbGetQuery(con, "SELECT * FROM mimiciii.d_labitems WHERE fluid LIKE 'BLOOD' and label LIKE '%GLUCOSE%'")
+# find the item ID of blood glucose exam (#50809 in gluLac, case sensitive)
+labgluLacglucose = dbGetQuery(con, "SELECT * FROM mimiciii.d_labitems WHERE fluid LIKE 'BLOOD' and label LIKE '%GLUCOSE%'")
 
 # find RH
-# find all ABG glucose level
+# find all gluLac glucose level
 glu = dbGetQuery(con, "SELECT hadm_id, subject_id, 
                      to_char(charttime, 'YYYY-MM-DD HH24:MI:SS') as charttime, valuenum 
                      FROM mimiciii.labevents 
@@ -78,7 +78,7 @@ for (i in 1:nrow(glu)) {
     # calculate time difference
     glu$difftime[i+1] = difftime(glu[i+1, 3], glu[i, 3], units="mins")
     
-    # calculate ABG glucose value difference
+    # calculate gluLac glucose value difference
     glu$diffval[i+1] = glu[i+1, 4] - glu[i, 4]
     
     # calculate value difference (in percantage) (compare to the previous value)
@@ -91,7 +91,7 @@ for (i in 1:nrow(glu)) {
 
 glu = na.omit(glu)
 
-# find RH and rapid RH in ABG glucose
+# find RH and rapid RH in gluLac glucose
 glu$rh = 0
 for (i in 1:nrow(glu)) {
   if (glu$dropPercent[i] <= - 0.3) {
@@ -218,3 +218,276 @@ count(glu$rh == 1 & glu$rhAfterHyper == 1) / count(glu$rh == 1) # 0.34
 # question 13: how many RH followed by insulin? ???
 
 # question 13: 
+
+# lab chem item id
+# find the item ID of blood lactate exam (#50813 in abg / #50954 in vein, case sensitive)
+labLact = dbGetQuery(con, "SELECT * FROM mimiciii.d_labitems WHERE fluid LIKE 'BLOOD' and label LIKE '%LACTAT%'")
+# find the item ID of blood base excess exam (#50802 in abg, case sensitive)
+labBase = dbGetQuery(con, "SELECT * FROM mimiciii.d_labitems WHERE fluid LIKE 'BLOOD' and label LIKE '%BAS%'")
+# find the item ID of blood CO2 exam (#50804 in abg, case sensitive)
+labCO2 = dbGetQuery(con, "SELECT * FROM mimiciii.d_labitems WHERE fluid LIKE 'BLOOD' and label LIKE '%CO2%'")
+# find the item ID of blood pH exam (#50820 in abg, case sensitive)
+labPH = dbGetQuery(con, "SELECT * FROM mimiciii.d_labitems WHERE fluid LIKE 'BLOOD' and label LIKE '%PH%'")
+# find the item ID of blood K+ exam (#50822 in abg / # 50971 in vein, case sensitive)
+labK = dbGetQuery(con, "SELECT * FROM mimiciii.d_labitems WHERE fluid LIKE 'BLOOD' and label LIKE '%POTA%'")
+# find the item ID of blood Cl- exam (#50806 in abg / # 50902 in vein, case sensitive)
+labCl = dbGetQuery(con, "SELECT * FROM mimiciii.d_labitems WHERE fluid LIKE 'BLOOD' and label LIKE '%CHL%'")
+
+###### lactate
+lac = dbGetQuery(con, "SELECT hadm_id, subject_id, 
+                     to_char(charttime, 'YYYY-MM-DD HH24:MI:SS') as charttime, valuenum 
+                 FROM mimiciii.labevents 
+                 WHERE hadm_id IS NOT NULL AND itemid = '50813'
+                 ORDER BY hadm_id, charttime")
+
+# unify the datetime format, for R calculation
+lac$charttime = as.POSIXct(lac$charttime, format="%Y-%m-%d %H:%M:%S")
+
+# gluLac data study
+gluLac = inner_join(glu, lac, by = c("hadm_id", "subject_id", "charttime"))
+colnames(gluLac)[4] = "glu"
+colnames(gluLac)[15] = "lac"
+
+gluLac$lacPrior1 = NA
+gluLac$lacPrior2 = NA
+gluLac$lacAfter = NA
+gluLac$lacDiff = NA
+
+# repeated the first row 3 times, for further loop
+gluLac = rbind(gluLac[1, ], gluLac[1, ], gluLac)
+
+for (i in 3:nrow(gluLac)) {
+  
+  # find the previous lac
+  if (gluLac$hadm_id[i] == gluLac$hadm_id[i-1]) {
+    gluLac$lacPrior1[i] = gluLac$lac[i-1]
+    gluLac$lacDiff[i] = gluLac$lac[i] - gluLac$lac[i-1]
+  }
+
+  if (gluLac$hadm_id[i] == gluLac$hadm_id[i-2]) {
+    gluLac$lacPrior2[i] = gluLac$lac[i-2]
+  }
+  
+  if (gluLac$hadm_id[i] == gluLac$hadm_id[i+1]) {
+    gluLac$lacAfter[i] = gluLac$lac[i+1]
+  }
+
+}
+
+gluLac = gluLac[-c(2, 3), ]
+
+###### base
+bas = dbGetQuery(con, "SELECT hadm_id, subject_id, 
+                 to_char(charttime, 'YYYY-MM-DD HH24:MI:SS') as charttime, valuenum 
+                 FROM mimiciii.labevents 
+                 WHERE hadm_id IS NOT NULL AND itemid = '50802'
+                 ORDER BY hadm_id, charttime")
+
+# unify the datetime format, for R calculation
+bas$charttime = as.POSIXct(bas$charttime, format="%Y-%m-%d %H:%M:%S")
+
+# gluBas data study
+gluBas = inner_join(glu, bas, by = c("hadm_id", "subject_id", "charttime"))
+colnames(gluBas)[4] = "glu"
+colnames(gluBas)[15] = "bas"
+
+gluBas$basPrior1 = NA
+gluBas$basPrior2 = NA
+gluBas$basAfter = NA
+gluBas$basDiff = NA
+
+# repeated the first row 3 times, for further loop
+gluBas = rbind(gluBas[1, ], gluBas[1, ], gluBas)
+
+for (i in 3:nrow(gluBas)) {
+  
+  # find the previous lac
+  if (gluBas$hadm_id[i] == gluBas$hadm_id[i-1]) {
+    gluBas$basPrior1[i] = gluBas$bas[i-1]
+    gluBas$basDiff[i] = gluBas$bas[i] - gluBas$bas[i-1]
+  }
+  
+  if (gluBas$hadm_id[i] == gluBas$hadm_id[i-2]) {
+    gluBas$basPrior2[i] = gluBas$bas[i-2]
+  }
+  
+  if (gluBas$hadm_id[i] == gluBas$hadm_id[i+1]) {
+    gluBas$basAfter[i] = gluBas$bas[i+1]
+  }
+  
+}
+
+gluBas = gluBas[-c(2, 3), ]
+
+###### CO2
+CO2 = dbGetQuery(con, "SELECT hadm_id, subject_id, 
+                 to_char(charttime, 'YYYY-MM-DD HH24:MI:SS') as charttime, valuenum 
+                 FROM mimiciii.labevents 
+                 WHERE hadm_id IS NOT NULL AND itemid = '50804'
+                 ORDER BY hadm_id, charttime")
+
+# unify the datetime format, for R calculation
+CO2$charttime = as.POSIXct(CO2$charttime, format="%Y-%m-%d %H:%M:%S")
+
+# gluBas data study
+gluCO2 = inner_join(glu, CO2, by = c("hadm_id", "subject_id", "charttime"))
+colnames(gluCO2)[4] = "glu"
+colnames(gluCO2)[15] = "CO2"
+
+gluCO2$CO2Prior1 = NA
+gluCO2$CO2Prior2 = NA
+gluCO2$CO2After = NA
+gluCO2$CO2Diff = NA
+
+# repeated the first row 3 times, for further loop
+gluCO2 = rbind(gluCO2[1, ], gluCO2[1, ], gluCO2)
+
+for (i in 3:nrow(gluCO2)) {
+  
+  # find the previous lac
+  if (gluCO2$hadm_id[i] == gluCO2$hadm_id[i-1]) {
+    gluCO2$CO2Prior1[i] = gluCO2$CO2[i-1]
+    gluCO2$CO2Diff[i] = gluCO2$CO2[i] - gluCO2$CO2[i-1]
+  }
+  
+  if (gluCO2$hadm_id[i] == gluCO2$hadm_id[i-2]) {
+    gluCO2$CO2Prior2[i] = gluCO2$CO2[i-2]
+  }
+  
+  if (gluCO2$hadm_id[i] == gluCO2$hadm_id[i+1]) {
+    gluCO2$CO2After[i] = gluCO2$CO2[i+1]
+  }
+  
+}
+
+gluCO2 = gluCO2[-c(2, 3), ]
+
+###### ph
+ph = dbGetQuery(con, "SELECT hadm_id, subject_id, 
+                 to_char(charttime, 'YYYY-MM-DD HH24:MI:SS') as charttime, valuenum 
+                 FROM mimiciii.labevents 
+                 WHERE hadm_id IS NOT NULL AND itemid = '50820'
+                 ORDER BY hadm_id, charttime")
+
+# unify the datetime format, for R calculation
+ph$charttime = as.POSIXct(ph$charttime, format="%Y-%m-%d %H:%M:%S")
+
+# gluBas data study
+gluph = inner_join(glu, ph, by = c("hadm_id", "subject_id", "charttime"))
+colnames(gluph)[4] = "glu"
+colnames(gluph)[15] = "ph"
+
+gluph$phPrior1 = NA
+gluph$phPrior2 = NA
+gluph$phAfter = NA
+gluph$phDiff = NA
+
+# repeated the first row 3 times, for further loop
+gluph = rbind(gluph[1, ], gluph[1, ], gluph)
+
+for (i in 3:nrow(gluph)) {
+  
+  # find the previous lac
+  if (gluph$hadm_id[i] == gluph$hadm_id[i-1]) {
+    gluph$phPrior1[i] = gluph$ph[i-1]
+    gluph$phDiff[i] = gluph$ph[i] - gluph$ph[i-1]
+  }
+  
+  if (gluph$hadm_id[i] == gluph$hadm_id[i-2]) {
+    gluph$phPrior2[i] = gluph$ph[i-2]
+  }
+  
+  if (gluph$hadm_id[i] == gluph$hadm_id[i+1]) {
+    gluph$phAfter[i] = gluph$ph[i+1]
+  }
+  
+}
+
+gluph = gluph[-c(2, 3), ]
+
+###### potassium
+k = dbGetQuery(con, "SELECT hadm_id, subject_id, 
+                to_char(charttime, 'YYYY-MM-DD HH24:MI:SS') as charttime, valuenum 
+                FROM mimiciii.labevents 
+                WHERE hadm_id IS NOT NULL AND itemid = '50822'
+                ORDER BY hadm_id, charttime")
+
+# unify the datetime format, for R calculation
+k$charttime = as.POSIXct(k$charttime, format="%Y-%m-%d %H:%M:%S")
+
+# gluBas data study
+gluK = inner_join(glu, k, by = c("hadm_id", "subject_id", "charttime"))
+colnames(gluK)[4] = "glu"
+colnames(gluK)[15] = "k"
+
+gluK$kPrior1 = NA
+gluK$kPrior2 = NA
+gluK$kAfter = NA
+gluK$kDiff = NA
+
+# repeated the first row 3 times, for further loop
+gluK = rbind(gluK[1, ], gluK[1, ], gluK)
+
+for (i in 3:nrow(gluK)) {
+  
+  # find the previous lac
+  if (gluK$hadm_id[i] == gluK$hadm_id[i-1]) {
+    gluK$kPrior1[i] = gluK$k[i-1]
+    gluK$kDiff[i] = gluK$k[i] - gluK$k[i-1]
+  }
+  
+  if (gluK$hadm_id[i] == gluK$hadm_id[i-2]) {
+    gluK$kPrior2[i] = gluK$k[i-2]
+  }
+  
+  if (gluK$hadm_id[i] == gluK$hadm_id[i+1]) {
+    gluK$kAfter[i] = gluK$k[i+1]
+  }
+  
+}
+
+gluK = gluK[-c(2, 3), ]
+
+
+###### potassium
+cl = dbGetQuery(con, "SELECT hadm_id, subject_id, 
+               to_char(charttime, 'YYYY-MM-DD HH24:MI:SS') as charttime, valuenum 
+               FROM mimiciii.labevents 
+               WHERE hadm_id IS NOT NULL AND itemid = '50806'
+               ORDER BY hadm_id, charttime")
+
+# unify the datetime format, for R calculation
+cl$charttime = as.POSIXct(cl$charttime, format="%Y-%m-%d %H:%M:%S")
+
+# gluBas data study
+gluCl = inner_join(glu, cl, by = c("hadm_id", "subject_id", "charttime"))
+colnames(gluCl)[4] = "glu"
+colnames(gluCl)[15] = "cl"
+
+gluCl$clPrior1 = NA
+gluCl$clPrior2 = NA
+gluCl$clAfter = NA
+gluCl$clDiff = NA
+
+# repeated the first row 3 times, for further loop
+gluCl = rbind(gluCl[1, ], gluCl[1, ], gluCl)
+
+for (i in 3:nrow(gluCl)) {
+  
+  # find the previous lac
+  if (gluCl$hadm_id[i] == gluCl$hadm_id[i-1]) {
+    gluCl$clPrior1[i] = gluCl$cl[i-1]
+    gluCl$clDiff[i] = gluCl$cl[i] - gluCl$cl[i-1]
+  }
+  
+  if (gluCl$hadm_id[i] == gluCl$hadm_id[i-2]) {
+    gluCl$clPrior2[i] = gluCl$cl[i-2]
+  }
+  
+  if (gluCl$hadm_id[i] == gluCl$hadm_id[i+1]) {
+    gluCl$clAfter[i] = gluCl$cl[i+1]
+  }
+  
+}
+
+gluCl = gluCl[-c(2, 3), ]
