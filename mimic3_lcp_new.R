@@ -134,7 +134,7 @@ for (i in 2:nrow(glu)) {
 
 
 # group by admission
-gluAdm = sqldf("SELECT hadm_id, count(rh) as cntRH, max(rh) as rh, count(rrh) as cntRRH, max(rrh) as rrh
+gluAdm = sqldf("SELECT hadm_id, sum(rh = 1) as cntRH, max(rh = 1) as rh, sum(rrh = 1) as cntRRH, max(rrh = 1) as rrh
                FROM glu GROUP BY hadm_id", drv='SQLite')  
 
 admission = left_join(admission, gluAdm, by="hadm_id")
