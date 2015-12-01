@@ -1,8 +1,3 @@
-# Copyright Â© 2015 by Wei-Hung Weng
-# All rights reserved. This document or any portion thereof
-# may not be reproduced or used in any manner whatsoever
-# without the express written permission of the author.
-#
 # Title : glucose classifier, using MIMIC3, relative hypoglycemia
 # Author : Wei-Hung Weng
 # Created : 11/19/2015
