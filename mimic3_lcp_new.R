@@ -1,12 +1,7 @@
-# Copyright © 2015 by Wei-Hung Weng
-# All rights reserved. This document or any portion thereof
-# may not be reproduced or used in any manner whatsoever
-# without the express written permission of the author.
-#
-# Title : glucose classifier, using MIMIC3, relative hypoglycemia
+# Title : glucose!, using MIMIC3, relative hypoglycemia
 # Author : Wei-Hung Weng
 # Created : 11/19/2015
-# Comment : currently 0115
+# Comment : 
 # Reference : 
 # 1. MIMIC3 database
 # 2. Rinaldo
@@ -187,11 +182,11 @@ summary(lm.ndm) # R-sq = 0.030
 
 # length of stay vs. number of RH events, all/diabetes/non-diabetes (linear regression)
 lm.all = lm(los ~ cntRH, admission)
-summary(lm.all) # R-sq = 0.082
+summary(lm.all) # R-sq = 0.059
 lm.dm = lm(los ~ cntRH, subset(admission[which(admission$dm == 1), ]))
-summary(lm.dm) # R-sq = 0.124
+summary(lm.dm) # R-sq = 0.106
 lm.ndm = lm(los ~ cntRH, subset(admission[which(admission$dm == 0), ]))
-summary(lm.ndm) # R-sq = 0.076
+summary(lm.ndm) # R-sq = 0.053
 
 # hypothesis 8: RRH independently associated with LOS? [yes/no, count]
 # association with death is stronger in DM -> same as hypothesis 3???
@@ -206,11 +201,11 @@ summary(lm.ndm) # R-sq = 0.009
 
 # length of stay vs. number of RRH events, all/diabetes/non-diabetes (linear regression)
 lm.all = lm(los ~ cntRRH, admission)
-summary(lm.all) # R-sq = 0.082
+summary(lm.all) # R-sq = 0.019
 lm.dm = lm(los ~ cntRRH, subset(admission[which(admission$dm == 1), ]))
-summary(lm.dm) # R-sq = 0.124
+summary(lm.dm) # R-sq = 0.029
 lm.ndm = lm(los ~ cntRRH, subset(admission[which(admission$dm == 0), ]))
-summary(lm.ndm) # R-sq = 0.076
+summary(lm.ndm) # R-sq = 0.018
 
 # question 12: how many RH followed by hypers? 34%
 count(glu$rh == 1 & glu$rhAfterHyper == 1) / count(glu$rh == 1) # 0.34
